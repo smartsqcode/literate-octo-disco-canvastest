@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Canvas Fingerprint Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: black;
+            color: white;
+        }
+        canvas {
+            border: 1px solid white;
+            margin-top: 20px;
+        }
+        #results {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            background: #333;
+            word-break: break-word;
+        }
+        .hash-block {
+            margin-bottom: 10px;
+        }
+        #match-result {
+            margin-top: 20px;
+            padding: 10px;
+            font-size: 18px;
+            font-weight: bold;
+            text-align: center;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Canvas Fingerprint Test</h1>
+    <canvas id="testCanvas" width="300" height="100"></canvas>
+    <div id="results">
+        <div class="hash-block">
+            <strong>toDataURL Hash:</strong>
+            <p id="hash-toDataURL">Calculating...</p>
+        </div>
+        <div class="hash-block">
+            <strong>toBlob Hash:</strong>
+            <p id="hash-toBlob">Calculating...</p>
+        </div>
+        <div class="hash-block">
+            <strong>getImageData Hash (Rendered):</strong>
+            <p id="hash-getImageData">Calculating...</p>
+        </div>
+    </div>
+    <div id="match-result">Calculating...</div>
+
+    <script>
+        // Функция для создания хеша SHA-256
+        async function generateHash(input) {
+            const hashBuffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+
+        // Преобразование ImageData в DataURL через создание нового canvas
+        function renderImageDataToDataURL(imageData, width, height) {
+            return new Promise(resolve => {
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = width;
+                tempCanvas.height = height;
+                const tempCtx = tempCanvas.getContext('2d');
+                tempCtx.putImageData(imageData, 0, 0);
+                resolve(tempCanvas.toDataURL());
+            });
+        }
+
+        async function generateFingerprintHashes() {
+            const canvas = document.getElementById('testCanvas');
+            const ctx = canvas.getContext('2d');
+
+            // Основной текст
+            const text = "FingerPrint,test <canvas> 2.0";
+            ctx.font = "16px Arial";
+
+            // Измеряем положение слова "<canvas>"
+            const textMetrics = ctx.measureText("FingerPrint,test ");
+            const canvasWordMetrics = ctx.measureText("<canvas>");
+            const rectX = 10 + textMetrics.width; // Смещение для "<canvas>"
+            const rectY = 50 - 16; // Смещение вверх (высота текста)
+            const rectWidth = canvasWordMetrics.width;
+            const rectHeight = 20; // Высота подложки
+
+            // Подложка под слово "<canvas>" (на задний план)
+            ctx.fillStyle = "yellow"; // Цвет подложки
+            ctx.fillRect(rectX, rectY, rectWidth, rectHeight);
+
+            // Отрисовка первого текста
+            ctx.fillStyle = "blue";
+            ctx.fillText(text, 10, 50);
+
+            // Наложение второго текста с небольшим смещением
+            ctx.fillStyle = "red";
+            ctx.fillText(text, 13, 53);
+
+            // Method 1: toDataURL
+            const dataURL = canvas.toDataURL();
+            const hashToDataURL = await generateHash(dataURL);
+            document.getElementById('hash-toDataURL').textContent = hashToDataURL;
+
+            // Method 2: toBlob
+            const blobPromise = new Promise(resolve => {
+                canvas.toBlob(blob => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result);
+                    reader.readAsDataURL(blob);
+                });
+            });
+            const blobData = await blobPromise;
+            const hashToBlob = await generateHash(blobData);
+            document.getElementById('hash-toBlob').textContent = hashToBlob;
+
+            // Method 3: getImageData (rendered to PNG)
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const renderedDataURL = await renderImageDataToDataURL(imageData, canvas.width, canvas.height);
+            const hashGetImageData = await generateHash(renderedDataURL);
+            document.getElementById('hash-getImageData').textContent = hashGetImageData;
+
+            // Compare hashes
+            const hashes = [hashToDataURL, hashToBlob, hashGetImageData];
+            const uniqueHashes = new Set(hashes).size;
+
+            const resultElement = document.getElementById('match-result');
+            if (uniqueHashes === 1) {
+                resultElement.textContent = "Result: Full match 3/3";
+                resultElement.style.backgroundColor = "green";
+                resultElement.style.color = "white";
+            } else if (uniqueHashes === 2) {
+                resultElement.textContent = "Result: Partial match 2/3";
+                resultElement.style.backgroundColor = "yellow";
+                resultElement.style.color = "black";
+            } else {
+                resultElement.textContent = "Result: Mismatch 0/3";
+                resultElement.style.backgroundColor = "red";
+                resultElement.style.color = "white";
+            }
+        }
+
+        generateFingerprintHashes();
+    </script>
+</body>
+</html>
